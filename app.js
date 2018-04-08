@@ -165,6 +165,35 @@ function startProcessing(hubSlug, harmonyClient){
   harmonyDeviceUpdateTimers[hubSlug] = setInterval(function(){ updateDevices(hubSlug) }, harmonyDeviceUpdateInterval)
 }
 
+function guessDeviceStates(hubSlug) {
+	  harmonyHubClient = harmonyHubClients[hubSlug]
+
+	  if (!harmonyHubClient) {return}
+	  console.log('Guessing device states for ' + hubSlug + '.')
+
+	  devices = harmonyDevicesCache[hubSlug]
+	  myCurrentActivity = currentActivity(hubSlug)
+
+	  if(!myCurrentActivity) {return}
+
+	  //Guess based on fixes
+	  Object.keys(myCurrentActivity.fixes).forEach(function(value){
+	    console.log('Guessing state for device ' + value)
+	    currentFix = myCurrentActivity.fixes[value]
+	    found_dev = devices[value]
+	    if (found_dev) {
+	      if(currentFix.isAlwaysOn || currentFix.isManualPower || currentFix.Power == "On") {
+	        console.log(found_dev.label + ' assumed to be On')
+	        found_dev['assumed_power'] = "On"
+	      }
+	      else {
+	        console.log(found_dev.label + ' assumed to be Off')
+	        found_dev['assumed_power'] = "Off"
+	      }
+	    }
+	  })
+	}
+
 function updateActivities(hubSlug){
   harmonyHubClient = harmonyHubClients[hubSlug]
 
@@ -175,7 +204,14 @@ function updateActivities(hubSlug){
     harmonyHubClient.getActivities().then(function(activities){
       foundActivities = {}
       activities.some(function(activity) {
-        foundActivities[activity.id] = {id: activity.id, slug: parameterize(activity.label), label:activity.label, isAVActivity: activity.isAVActivity}
+        foundActivities[activity.id] = {
+        		id: activity.id, 
+        		slug: parameterize(activity.label),
+        		label:activity.label, 
+        		isAVActivity: activity.isAVActivity,
+        		fixes: activity.fixit
+		}
+        
         Object.defineProperty(foundActivities[activity.id], "commands", {
           enumerable: false,
           writeable: true,
@@ -187,7 +223,15 @@ function updateActivities(hubSlug){
   } catch(err) {
     console.log("ERROR: " + err.message);
   }
+  guessDeviceStates(hubSlug)
 
+}
+
+function getCurrentDevicePowerState(hubSlug, deviceId) {
+	  if (harmonyDevicesCache && harmonyDevicesCache[hubSlug] && harmonyDevicesCache[hubSlug][deviceId]) {
+	    return harmonyDevicesCache[hubSlug][deviceId]['assumed_power']
+	  }
+	  return false
 }
 
 function updateState(hubSlug){
@@ -237,6 +281,7 @@ function updateState(hubSlug){
   } catch(err) {
     console.log("ERROR: " + err.message);
   }
+  guessDeviceStates(hubSlug)
 
 }
 
@@ -256,6 +301,7 @@ function updateDevices(hubSlug){
           writeable: true,
           value: deviceCommands
         });
+        foundDevices[device.id]['assumed_power'] = getCurrentDevicePowerState(hubSlug, device.id) || "off"
       })
 
       harmonyDevicesCache[hubSlug] = foundDevices
@@ -264,6 +310,7 @@ function updateDevices(hubSlug){
   } catch(err) {
     console.log("Devices ERROR: " + err.message);
   }
+  guessDeviceStates(hubSlug)
 }
 
 function getCommandsFromControlGroup(controlGroup){
